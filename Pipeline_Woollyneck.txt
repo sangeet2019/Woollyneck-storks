@@ -1,0 +1,148 @@
+# do fastqc 
+
+/dir/Fastqc/fastqc /dir/22055D-01-04_S0_L001_R1_001/22055D-01-04_S0_L001_R1_001.fastq.gz
+
+#ALIGNING THE SEQUENCE WITH REFERENCE GENOME USING BWA
+
+/dir/bwa/bwa mem -t 8 -R '@RG\tID:22055D-01-04\tSM:22055D-01-04' /dir/GCA_017639555.1_bCicMag1.pri_genomic.fasta  /dir/22055D-01-04_S0_L001_R1_001.fastq.gz /dir/22055D-01-04_S0_L001_R2_001.fastq.gz > 22055D-01-04_alignment.sam
+
+#SAM file to BAM
+
+$ java -Xmx20g -jar /dir/picard.jar SamFormatConverter INPUT=22055D-01-04_alignment.sam OUTPUT=22055D-01-04_alignment.bam VALIDATION_STRINGENCY=SILENT
+
+#BAM to sorted BAM
+
+java -Xmx20g -jar /dir/picard.jar SortSam INPUT=22055D-01-04_alignment.bam OUTPUT=22055D-01-04_alignment.sorted.bam SORT_ORDER=coordinate VALIDATION_STRINGENCY=SILENT TMP_DIR=/dir/seqalignment
+
+#Mark duplicate reads
+
+$ java -Xmx20g -jar /dir/picard.jar MarkDuplicates INPUT=22055D-01-04_alignment.sorted.bam OUTPUT=22055D-01-04_alignment.sorted.MarkDup.bam METRICS_FILE=DupMetrics ASSUME_SORTED=true VALIDATION_STRINGENCY=SILENT MAX_FILE_HANDLES_FOR_READ_ENDS_MAP=1000
+
+
+#haplotype caller
+
+$ /dir/gatk-4.2.0.0/gatk HaplotypeCaller --input 22055D-01-04_alignment.sorted.MarkDup.bam --output 22055D-01-04_alignment.sorted.MarkDup.bam.g.vcf --reference /dir/GCA_017639555.1_bCicMag1.pri_genomic.fasta -mbq 20 -ERC GVCF
+
+#Combine GVCF file from all samples to get a single GVCF file
+
+/dir/gatk-4.2.0.0/gatk CombineGVCFs --reference /dir/GCA_017639555.1_bCicMag1.pri_genomic.fasta --output All.wnssamples.raw.variants.v1.g.vcf --variant 22055D-01-04_alignment.sorted.MarkDup.bam.g.vcf --variant *_alignment.sorted.MarkDup.bam.g.vcf --variant *_alignment.sorted.MarkDup.bam.g.vcf --variant *_alignment.sorted.MarkDup.bam.g.vcf --variant *_alignment.sorted.MarkDup.bam.g.vcf --variant *_alignment.sorted.MarkDup.bam.g.vcf --variant *_alignment.sorted.MarkDup.bam.g.vcf --variant *_alignment.sorted.MarkDup.bam.g.vcf --variant *_alignment.sorted.MarkDup.bam.g.vcf --variant *_alignment.sorted.MarkDup.bam.g.vcf --variant *_alignment.sorted.MarkDup.bam.g.vcf --variant *_alignment.sorted.MarkDup.bam.g.vcf
+
+
+#Call variants from combined GVCF file 
+
+/dir/gatk-4.2.0.0/gatk GenotypeGVCFs --reference /dir/GCA_017639555.1_bCicMag1.pri_genomic.fasta   --variant All.wnssamples.raw.variants.v1.g.vcf --output All.wnssamples.raw.variants.v1.vcf.gz
+
+
+#Only extract SNP from variant file
+
+/dir/Tools/gatk-4.2.0.0/gatk SelectVariants --reference /dir/GCA_017639555.1_bCicMag1.pri_genomic.fasta  --variant All.wnssamples.raw.variants.v1.vcf.gz --select-type-to-include SNP --output All.wnssamples.raw.SNPs.v1.vcf.gz --restrict-alleles-to BIALLELIC
+
+#Now indexing using BCFTOOLs
+
+$ /dir/bcftools index -t -f All.wnssamples.raw.SNPs.v1.vcf.gz
+
+# Get vcf stats and filter
+
+$ /dir/vcftools_0.1.13/bin/vcftools --gzvcf All.wnssamples.raw.SNPs.v1.vcf.gz --get-INFO BaseQRankSum --get-INFO DP --get-INFO FS --get-INFO MQ --get-INFO MQRankSum --get-INFO ReadPosRankSum --get-INFO QUAL  --get-INFO QD -- chr CM030194.1
+
+$ /dir/gatk-4.2.0.0/gatk VariantFiltration --reference /dir/GCA_017639555.1_bCicMag1.pri_genomic.fasta --variant All.wnssamples.raw.SNPs.v1.vcf.gz --output All.wnssamples.v1.snp.VF.vcf.gz --filter-name "my_filter1" --filter-expression "FS > 100.0" --filter-name "my_filter2" --filter-expression "MQ < 50.0" --filter-name "my_filter3" --filter-expression "MQRankSum < -5.0" --filter-name "my_filter4" --filter-expression "ReadPosRankSum < -4.0" --filter-name "my_filter5" --filter-expression "BaseQRankSum < -5.0" --filter-name "my_filter6" --filter-expression "DP > 500" --filter-name "my_filter7" --filter-expression "DP < 10" --filter-name "my_filter8" --filter-expression "QD < 5.0" 
+
+
+>> Finally, filter for missing data. Only include those SNPs that are present in at least two samples
+
+/dir/vcftools_0.1.13/bin/vcftools --gzvcf All.wnssamples.v1.snp.filtered.Q100.GQ10.vcf.recode.vcf --max-missing 0.17 --recode --recode-INFO-all --out All.wnssamples.v1.snp.filtered.Q100.GQ10.missing2
+
+>> missing in none samples
+
+/dir/vcftools_0.1.13/bin/vcftools --gzvcf All.wnssamples.v1.snp.filtered.Q100.GQ10.vcf.recode.vcf --max-missing 1 --recode --recode-INFO-all --out All.wnssamples.v1.snp.filtered.Q100.GQ10.maxmissing1
+
+
+#Starting with PCA
+
+VCF=/dir/All.wnssamples.v1.snp.filtered.Q100.GQ10.maxmissing1.recode.vcf
+
+
+# perform linkage pruning - i.e. identify prune sites
+
+/dir/plink --vcf $VCF --double-id --allow-extra-chr \
+--set-missing-var-ids @:# \
+--indep-pairwise 50 10 0.1 --out wns
+
+#Perform PCA
+
+/dir/plink --vcf $VCF --double-id --allow-extra-chr --set-missing-var-ids @:# \
+--extract wns.prune.in \
+--make-bed --pca --out wns
+
+#Do rest of the analysis in R
+
+#Creating Phylogenetic Tree
+# Convert vcf to phylip
+
+python /scratch/Tools/scripts/vcf2phylip/vcf2phylip.py -i /dir/All.wnssamples.v1.snp.filtered.Q100.GQ10.missing1.recode.vcf -f -m 12
+
+# Making a Tree
+
+$ /dir/FastTreeMP -nt -gtr -gamma All.wnssamples.v1.snp.filtered.Q100.GQ10.missing1.recode.min12.fasta > wns.tree
+
+#Admixture
+
+FILE=/dir/All.wnssamples.v1.snp.filtered.Q100.GQ10.maxmissing1.recode
+
+/dir/plink --vcf $FILE.vcf --make-bed --out $FILE --allow-extra-chr
+
+
+# ADMIXTURE does not accept chromosome names that are not human chromosomes. We will thus just exchange the first column by 0
+
+awk '{$1="0";print $0}' $FILE.bim > $FILE.bim.tmp
+mv $FILE.bim.tmp $FILE.bim
+
+#Run admixture
+# cv is Cross validation
+
+
+#Run in loop
+
+for i in {1..5}
+do
+/dir/admixture_linux-1.3.0/admixture --cv $FILE.bed $i > log${i}.out
+done
+
+#Find best value of k cluster
+
+grep "CV" *out | awk '{print $3,$4}' | sed -e 's/(//;s/)//;s/://;s/K=//'  > $FILE.cv.error
+
+
+#Use R for plotting
+VCF=/dir/All.wnssamples.v1.snp.filtered.Q100.GQ10.maxmissing1.recode.vcf
+
+#Need to make a txt file designating the species
+
+african_samples African
+stormi			Outgroup
+indian_samples  	Indian
+Indonesian_samples  Indonesia
+
+
+#Run
+/scratch/Tools/Dsuite/Build/Dsuite Dtrios $VCF SETS.txt
+
+#TreeMix
+
+sh Step1_TreeMix.sh $FILE 10 100 Stormi 500 /scratch/Tools/phylip-3.697/exe/consense wnsmig 1 5 10
+
+#Now calculate windowed pi
+/dir/vcftools --vcf Indiansamples.new.maf0.001maxmissing1.recode.vcf --out wnspop_indian.new --window-pi 15000
+
+
+/dir/vcftools --vcf Africansamples.new.maf0.001maxmissing1.recode.vcf --out wnspop_african.new --window-pi 15000
+
+/dir/vcftools --vcf Indonesiansamples.new.maf0.001maxmissing1.recode.vcf --out wnspop_indonesian.new --window-pi 15000
+
+/dir/vcftools --vcf stormisamples.new.maf0.001maxmissing1.recode.vcf --out wnspop_stormi.new --window-pi 15000
+
+#FST
+
+/DIR/vcftools --vcf  All.wnssamples.v1.snp.filtered.Q100.GQ10.maxmissing1.maf0.01.recode.vcf --out wns_new_asia_africa15k  --fst-window-size 15000 --fst-window-step 15000 --weir-fst-pop asian.txt --weir-fst-pop african.txt
+
+	
