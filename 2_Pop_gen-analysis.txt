@@ -1,0 +1,86 @@
+1.Principal component analysis using plink (https://www.cog-genomics.org/plink/) to understand genetic similarities /disimilarities between samples 
+
+VCF=/dir/All.wnssamples.v1.snp.filtered.Q100.GQ10.maxmissing1.recode.vcf
+
+
+# PCA requires LD prunned dataset so perform linkage pruning - i.e. identify prune sites
+
+/dir/plink --vcf $VCF --double-id --allow-extra-chr \
+--set-missing-var-ids @:# \
+--indep-pairwise 50 10 0.1 --out wns
+
+#Perform PCA
+
+/dir/plink --vcf $VCF --double-id --allow-extra-chr --set-missing-var-ids @:# \
+--extract wns.prune.in \
+--make-bed --pca --out wns
+
+#using outputs in R to make PCA plots
+
+
+2. Creating Phylogenetic Tree
+# Convert vcf to fasta as FastTree requires fasta file as input
+
+python /scratch/Tools/scripts/vcf2phylip/vcf2phylip.py -i /dir/All.wnssamples.v1.snp.filtered.Q100.GQ10.missing1.recode.vcf -f -m 12
+
+# Making a maximum likelihood phylogenetic Tree using FastTree (http://www.microbesonline.org/fasttree/)
+
+$ /dir/FastTreeMP -nt -gtr -gamma All.wnssamples.v1.snp.filtered.Q100.GQ10.missing1.recode.min12.fasta > wns.tree
+
+#using output tree in figtree to visualize the phylogenetic tree
+
+
+
+3. Performing Admixture to explore population structure
+
+FILE=/dir/All.wnssamples.v1.snp.filtered.Q100.GQ10.maxmissing1.recode
+
+/dir/plink --vcf $FILE.vcf --make-bed --out $FILE --allow-extra-chr
+
+
+# ADMIXTURE does not accept chromosome names that are not human chromosomes. We will thus just exchange the first column by 0
+
+awk '{$1="0";print $0}' $FILE.bim > $FILE.bim.tmp
+mv $FILE.bim.tmp $FILE.bim
+
+#Runing admixture
+# cv is Cross validation
+#Run in loop
+
+for i in {1..5}
+do
+/dir/admixture_linux-1.3.0/admixture --cv $FILE.bed $i > log${i}.out
+done
+
+#Find best value of k cluster
+
+grep "CV" *out | awk '{print $3,$4}' | sed -e 's/(//;s/)//;s/://;s/K=//'  > $FILE.cv.error
+
+
+#Use R for plotting
+
+
+4. Using Dsuite to calculate ABBA-BABA statistics to explore gene flow between populations(esp. Indian and Indonesian), 
+
+VCF=/dir/All.wnssamples.v1.snp.filtered.Q100.GQ10.maxmissing1.recode.vcf
+
+#Need to make a SETS.txt file designating the species
+
+african_samples African
+stormi_samples			Outgroup
+indian_samples  	Indian
+Indonesian_samples  Indonesia
+
+
+#Run
+/scratch/Tools/Dsuite/Build/Dsuite Dtrios $VCF SETS.txt
+
+5. Running TreeMix to explore gene flow between populations
+
+sh Step1_TreeMix.sh $FILE 10 100 Stormi 500 /scratch/Tools/phylip-3.697/exe/consense wnsmig 1 5 10
+
+
+6. Calculating Fixatation index (Fst) to explore pairwise genetic distance between populations
+#Calculating windowed Fst between Asian and African populations 
+
+/DIR/vcftools --vcf  All.wnssamples.v1.snp.filtered.Q100.GQ10.maxmissing1.maf0.01.recode.vcf --out wns_asia_africa15k  --fst-window-size 15000 --fst-window-step 15000 --weir-fst-pop asian.txt --weir-fst-pop african.txt
