@@ -52,7 +52,7 @@ $ /dir/vcftools_0.1.13/bin/vcftools --gzvcf All.wnssamples.raw.SNPs.v1.vcf.gz --
 
 $ /dir/gatk-4.2.0.0/gatk VariantFiltration --reference /dir/GCA_017639555.1_bCicMag1.pri_genomic.fasta --variant All.wnssamples.raw.SNPs.v1.vcf.gz --output All.wnssamples.v1.snp.VF.vcf.gz --filter-name "my_filter1" --filter-expression "FS > 100.0" --filter-name "my_filter2" --filter-expression "MQ < 50.0" --filter-name "my_filter3" --filter-expression "MQRankSum < -5.0" --filter-name "my_filter4" --filter-expression "ReadPosRankSum < -4.0" --filter-name "my_filter5" --filter-expression "BaseQRankSum < -5.0" --filter-name "my_filter6" --filter-expression "DP > 500" --filter-name "my_filter7" --filter-expression "DP < 10" --filter-name "my_filter8" --filter-expression "QD < 5.0" 
 
->> Finally, filter for missing data. Only include those SNPs that are present in at least two samples
+>> Finally, filter for missing data. 
 
 /dir/vcftools_0.1.13/bin/vcftools --gzvcf All.wnssamples.v1.snp.filtered.Q100.GQ10.vcf.recode.vcf --max-missing 0.17 --recode --recode-INFO-all --out All.wnssamples.v1.snp.filtered.Q100.GQ10.missing2
 
