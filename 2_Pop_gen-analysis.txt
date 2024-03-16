@@ -94,12 +94,12 @@ sh Step1_TreeMix.sh $FILE 10 100 Stormi 500 /scratch/Tools/phylip-3.697/exe/cons
 
 8. Fastsimcoal2
 PREFIX="no_geneflow" #same for "early_geneflow" and "ongoing_geneflow"
-for i in {1..10}
+for i in {1..100}
  do
    mkdir run$i
    cp ${PREFIX}.tpl ${PREFIX}.est ${PREFIX}_jointMAFpop3_1.obs run$i"/"
    cd run$i
-  /scratch/Tools/fsc28_linux64/fsc28 -t ${PREFIX}.tpl -e ${PREFIX}.est -m -C 10 -n 100000 -L 40 -s0 -M -q
+  /scratch/Tools/fsc28_linux64/fsc28 -t ${PREFIX}.tpl -e ${PREFIX}.est -m -C 10 -n 200000 -L 40 -s0 -M -q
    cd ..
  done
 
